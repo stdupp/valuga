@@ -9,12 +9,30 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-func ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "CONNECT" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+func handleHTTP(w http.ResponseWriter, req *http.Request, dialer proxy.Dialer) {
+	tp := http.Transport{
+		Dial: dialer.Dial,
+	}
+	resp, err := tp.RoundTrip(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	defer resp.Body.Close()
+	copyHeader(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
 
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func handleTunnel(w http.ResponseWriter, req *http.Request, dialer proxy.Dialer) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
@@ -25,13 +43,9 @@ func ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	d := &net.Dialer{
-		Timeout: 10 * time.Second,
-	}
-	dialer, _ := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, d)
 	dstConn, err := dialer.Dial("tcp", req.Host)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		srcConn.Close()
 		return
 	}
 
@@ -39,7 +53,6 @@ func ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	go transfer(dstConn, srcConn)
 	go transfer(srcConn, dstConn)
-
 }
 
 func transfer(dst io.WriteCloser, src io.ReadCloser) {
@@ -49,6 +62,19 @@ func transfer(dst io.WriteCloser, src io.ReadCloser) {
 	io.Copy(dst, src)
 }
 
+func serveHTTP(w http.ResponseWriter, req *http.Request) {
+	d := &net.Dialer{
+		Timeout: 10 * time.Second,
+	}
+	dialer, _ := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, d)
+
+	if req.Method == "CONNECT" {
+		handleTunnel(w, req, dialer)
+	} else {
+		handleHTTP(w, req, dialer)
+	}
+}
+
 func main() {
-	http.ListenAndServe("127.0.0.1:8124", http.HandlerFunc(ServeHTTP))
+	http.ListenAndServe("127.0.0.1:8124", http.HandlerFunc(serveHTTP))
 }
