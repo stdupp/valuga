@@ -83,13 +83,9 @@ func serveHttp(socksAddr string) http.HandlerFunc {
 func main() {
 	var httpListenPort = flag.Int("p", 1081, "HTTP listen port")
 	var httpListenHost = flag.String("h", "127.0.0.1", "HTTP listen host")
-
-	var httpListenAddr = *httpListenHost+":"+strconv.Itoa(*httpListenPort)
-
 	var socks5Addr = flag.String("s", "127.0.0.1:1080", "Upstream socks5 address")
-
 	flag.Parse()
-
+	var httpListenAddr = *httpListenHost + ":" + strconv.Itoa(*httpListenPort)
 	log.Println("Listening on ", httpListenAddr)
 	log.Println("Connect to Socks5 Proxy on ", *socks5Addr)
 	http.ListenAndServe(httpListenAddr, http.HandlerFunc(serveHttp(*socks5Addr)))
