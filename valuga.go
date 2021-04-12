@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -66,7 +69,7 @@ func serveHTTP(w http.ResponseWriter, req *http.Request) {
 	d := &net.Dialer{
 		Timeout: 10 * time.Second,
 	}
-	dialer, _ := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, d)
+	dialer, _ := proxy.SOCKS5("tcp", "127.0.0.1:3060", nil, d)
 
 	if req.Method == "CONNECT" {
 		handleTunnel(w, req, dialer)
@@ -76,5 +79,11 @@ func serveHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	http.ListenAndServe("127.0.0.1:8124", http.HandlerFunc(serveHTTP))
+	var httpListenPort = flag.Int("p", 3062, "HTTP listen port")
+	var httpListenHost = flag.String("h", "127.0.0.1", "HTTP listen host")
+	flag.Parse()
+	var httpListen = *httpListenHost+":"+strconv.Itoa(*httpListenPort)
+	log.Println("Listening on ", httpListen)
+
+	http.ListenAndServe(httpListen, http.HandlerFunc(serveHTTP))
 }
