@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -62,19 +65,28 @@ func transfer(dst io.WriteCloser, src io.ReadCloser) {
 	io.Copy(dst, src)
 }
 
-func serveHTTP(w http.ResponseWriter, req *http.Request) {
-	d := &net.Dialer{
-		Timeout: 10 * time.Second,
-	}
-	dialer, _ := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, d)
+func serveHttp(socksAddr string) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		d := &net.Dialer{
+			Timeout: 10 * time.Second,
+		}
+		dialer, _ := proxy.SOCKS5("tcp", socksAddr, nil, d)
 
-	if req.Method == "CONNECT" {
-		handleTunnel(w, req, dialer)
-	} else {
-		handleHTTP(w, req, dialer)
+		if req.Method == "CONNECT" {
+			handleTunnel(w, req, dialer)
+		} else {
+			handleHTTP(w, req, dialer)
+		}
 	}
 }
 
 func main() {
-	http.ListenAndServe("127.0.0.1:8124", http.HandlerFunc(serveHTTP))
+	var httpListenPort = flag.Int("p", 1081, "HTTP listen port")
+	var httpListenHost = flag.String("h", "127.0.0.1", "HTTP listen host")
+	var socks5Addr = flag.String("s", "127.0.0.1:1080", "Upstream socks5 address")
+	flag.Parse()
+	var httpListenAddr = *httpListenHost + ":" + strconv.Itoa(*httpListenPort)
+	log.Println("Listening on ", httpListenAddr)
+	log.Println("Connect to Socks5 Proxy on ", *socks5Addr)
+	http.ListenAndServe(httpListenAddr, http.HandlerFunc(serveHttp(*socks5Addr)))
 }
